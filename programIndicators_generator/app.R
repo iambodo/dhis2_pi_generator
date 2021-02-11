@@ -18,6 +18,7 @@
 #Negate filters
 
 
+
 ## app.R ##
 
 #### Load Libraries and define custom functions
@@ -202,8 +203,12 @@ pi_printer<-function(template, type, program_id, pi_name, pi_code, pi_filter){
 ##################### UI #################
 
 ui <- dashboardPage(skin="purple",
-    dashboardHeader(title = "P.I. Generator"),
-    dashboardSidebar(
+       dashboardHeader(title = "P.I. Generator",
+                      tags$li(a(href = 'https://github.com/iambodo/dhis2_pi_generator', #github link
+                                icon("github"),
+                                title = "Github"),
+                                class = "dropdown")),
+        dashboardSidebar(
         
         # Ask for base url 
         textInput(inputId = "baseurl", "DHIS2 URL", value = "https://play.dhis2.org/2.35.1/"),
@@ -215,7 +220,7 @@ ui <- dashboardPage(skin="purple",
         passwordInput(inputId = "password", "Password for this username", value = "district"),
         
         #login button
-        actionButton(inputId = "login", label = "Log-In & Load Metadata")    
+        actionButton(inputId = "login", label = "Log-In & Load Metadata") 
         
         # downloadButton("downloadAllData", "Download As CSV")
 
@@ -240,6 +245,9 @@ ui <- dashboardPage(skin="purple",
                                          selected = "EVENT"),
                             checkboxInput(inputId="negate_pi_filter", 
                                           "!Negative Filters", value=FALSE),
+                            textInput(inputId="other_filter",
+                                      "Other text to append to filter?"),
+                            helpText("Use this if you have already have a complex filter to add as a base"),
                             br(),
                             tags$strong("Numeric Ranges"),
                             radioButtons("useRange",
@@ -683,7 +691,8 @@ pi_table_data <-reactive({
             is.na(option_name) & !is.na(pi_values) ~ paste0(str_trunc(de_teia_name, 30, "right"), ": ", pi_values),
            !is.na(option_name) ~ paste0(str_trunc(de_teia_name, 30, "right"), ": ", option_name))) %>%
           mutate(pi_name=str_to_sentence(pi_name)) %>%
-          mutate(pi_code=str_trunc(str_to_upper(pi_name), 50, "right"))
+          mutate(pi_code=str_trunc(str_to_upper(pi_name), 50, "right")) %>% 
+          mutate(pi_filter=str_c(pi_filter," ",input$other_filter))
           
         
         return(dat)
