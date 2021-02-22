@@ -199,6 +199,8 @@ pi_printer<-function(template, type, program_id, pi_name, pi_code, pi_filter){
     
     #reassign period boundary
     pluck(template, "analyticsPeriodBoundaries","boundaryTarget")<-paste0(type, "_DATE")
+    pluck(template, "analyticsType")<-paste0(type)
+    
     #reassign program and others
     pluck(template, "program","id")<-program_id
     pluck(template, "expression")<-paste0("V{",str_to_lower(type),"_count}")
