@@ -66,14 +66,25 @@ build_pi_filter <- function(ps, de, pi_value, type){
 }
 
 # Use this if the data TYPE is numeric and you want to build ranges
-build_pi_filter_num <- function(ps, de, rangev1, rangev2, type){
+build_pi_filter_num <- function(ps, de, rangev1, rangev2, type, valType, dateRanges){
   
       baseA <-str_c("A{", de, "} ")
       baseD <-str_c("#{", ps, ".", de, "} ")
       
       v1op<-str_c(">=",rangev1)
       v2op<-str_c("<", rangev2)
-        
+      
+      baseA<-case_when(
+        valType %in% c("DATE","AGE") ~  str_replace(dateRanges, fixed("[DATE]"), baseA),
+        TRUE ~ baseA
+      )
+
+      baseD<-case_when(
+        valType %in% c("DATE","AGE") ~  str_replace(dateRanges, fixed("[DATE]"), baseD),
+        TRUE ~ baseD
+         )
+
+
     out<- case_when(
         ps=="" & type=="EVENT" ~ str_c(baseA, v1op, " && ", baseA, v2op),
         ps!="" & type=="ENROLLMENT" ~str_c("d2:countIfCondition(", baseD, "'", v1op,"') > 0 && ",
@@ -85,7 +96,18 @@ build_pi_filter_num <- function(ps, de, rangev1, rangev2, type){
     return(out)
 } 
 
-# Negate all parts of a PI filter
+
+# How to build date ranges
+dateRangeChoices<-list("d2:hasValue([DATE])",
+                       "d2:daysBetween([DATE], V{analytics_period_start})",
+                       "d2:daysBetween([DATE], V{event_date})",
+                       "d2:daysBetween([DATE], V{enrollment_date})",
+                       "d2:yearsBetween([DATE], V{analytics_period_start})",
+                       "d2:yearsBetween([DATE], V{event_date})",
+                       "d2:yearsBetween([DATE], V{enrollment_date})" )
+
+
+# Negate all conditions of a PI filter
 negate_filter <- function(x, go) {
   if (go==TRUE){
   str_replace_all(x, c("\\) > 0" = ") == 0", "\\} ==" = "} !=",  "d2:h" ="!d2:h"))
@@ -189,6 +211,9 @@ pi_printer<-function(template, type, program_id, pi_name, pi_code, pi_filter){
     template[c("id")]<-NULL
     template[c("translations")]<-NULL
     template[c("userGroupAccesses")]<-NULL
+    template[c("user")]<-NULL
+    template[c("lastUpdatedBy")]<-NULL
+    pluck(template, "analyticsPeriodBoundaries","id")<-""
     
 
     return(template)
@@ -239,34 +264,40 @@ ui <- dashboardPage(skin="purple",
                    tabPanel(id="tab2", title="Data Points",
                             DTOutput("contents")),
                    tabPanel(id="tab1", title="Filter Options",
+                          box(width=6,
                             radioButtons(inputId = "pi_type", "Choose PI Type / Expression / Period Boundaries",
                                          choices = list("EVENT" = "EVENT", 
                                                         "ENROLLMENT" = "ENROLLMENT"),
                                          selected = "EVENT"),
                             checkboxInput(inputId="negate_pi_filter", 
-                                          "!Negative Filters", value=FALSE),
+                                          "!Negate All Filter Conditions", value=FALSE),
                             textInput(inputId="other_filter",
                                       "Other text to append to filter?"),
-                            helpText("Use this if you have already have a complex filter to add as a base"),
-                            br(),
+                            helpText("Use this if you have already have a complex filter to add as a base")
+                            ),
+                          box(width=6,  
+                            # br(),
                             tags$strong("Numeric Ranges"),
                             radioButtons("useRange",
                                          "How to filter numeric data types?",
                                          choices = list("d2:hasValue()"=FALSE, 
                                                         "Custom Numeric Range"=TRUE), 
                                          selected = FALSE),
-                            column(width=3,
+                            # column(width=3,
                             numericInput(inputId="numRangeMin",
-                                         "Numeric Range Min", value=0, min=0)),
-                            column(width=3,
+                                         "Numeric Range Min", value=0, min=0),
+                            # column(width=3,
                             numericInput(inputId="numRangeMax",
-                                         "Numeric Range Max", value=100, min=0)),
+                                         "Numeric Range Max", value=100, min=0),
                             # sliderInput(inputId="numRange",
                             #             "Numeric Range Max and Min",
                             #             min=0, max=100, value=c(0, 100)),
                             sliderInput(inputId="numBins",
                                         "Numeric range bins:",
-                                        min = 1,  max = 7, value = 2)
+                                        min = 1,  max = 7, value = 2),
+                            selectInput(inputId="dateRanges","How do you want to handle date or age values?",
+                                        choices = dateRangeChoices)
+                          )
                    ),
                 width=10),
             box(title="Select Data Elements & Attributes to Convert to PI Filters",
@@ -444,7 +475,9 @@ server <- function(input, output, session) {
                         mutate(NUMERICVAL=if_else((is.na(optionSet.id) & 
                                                valueType %in% c("NUMBER",
                                                                 "INTEGER",
-                                                                "INTEGER_POSITIVE")),TRUE,FALSE)) %>% 
+                                                                "INTEGER_POSITIVE",
+                                                                "DATE",
+                                                                "AGE")),TRUE,FALSE)) %>% 
                         select(program, stage, "stage_id"=id, NUMERICVAL, everything() ) 
                         
 
@@ -587,6 +620,8 @@ pi_table_data <-reactive({
                        rangev2=as.numeric())
       }
       
+      
+      
       # filter data elements from program row selection, and build filters
       dat<-getData()$de1 %>% 
             as_tibble() %>% 
@@ -597,7 +632,8 @@ pi_table_data <-reactive({
             left_join(ranges, by="NUMERICVAL") %>% 
             # mutate(pi_values=if_else(NUMERIC!="", as.character(ranges), pi_values)) %>% 
             mutate(pi_filter= if_else((NUMERICVAL==TRUE & input$useRange==TRUE),
-                build_pi_filter_num(stage_id, de_teia_id, rangev1, rangev2, input$pi_type),
+                build_pi_filter_num(stage_id, de_teia_id, rangev1, rangev2, input$pi_type,
+                                    valueType, input$dateRanges),
                 build_pi_filter(stage_id,de_teia_id, 
                                               pi_values,
                                               input$pi_type))) %>% 
@@ -705,6 +741,25 @@ pi_table_data <-reactive({
     
 })
 
+
+
+## If the max range is empty it'll crash!  
+observe({
+  if (!is.null(program_rows() ) & (is.na(input$numRangeMax))){
+    
+    updateNumericInput(session, "numRangeMax",
+                      value = input$numRangeMin) }
+  
+})
+
+## If the min range is empty, itll crash! 
+observe({
+  if (!is.null(program_rows() ) & is.na(input$numRangeMin)){
+    
+    updateNumericInput(session, "numRangeMin",
+                       value = input$numRangeMax) }
+  
+})
 
 
 
@@ -820,7 +875,7 @@ selected_all_PI<-reactive({
     #output from template->PI conversion
     output_pi<-list()
     for (i in 1:nrow(pi_rows() )){
-      output_pi[[i]]<-pi_printer(template, "EVENT", 
+      output_pi[[i]]<-pi_printer(template, input$pi_type, 
                               pi_rows()$program.id[i], pi_rows()$pi_name[i],
                               pi_rows()$pi_code[i], pi_rows()$pi_filter[i])
     }
